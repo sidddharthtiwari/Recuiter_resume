@@ -6,7 +6,6 @@ import PyPDF2 as pdf
 from dotenv import load_dotenv
 import re
 import webbrowser
-from faker import Faker
 
 # Load environment variables from a .env file
 load_dotenv()
@@ -28,9 +27,6 @@ safety_settings = [
     {"category": f"HARM_CATEGORY_{category}", "threshold": "BLOCK_MEDIUM_AND_ABOVE"}
     for category in ["HARASSMENT", "HATE_SPEECH", "SEXUALLY_EXPLICIT", "DANGEROUS_CONTENT"]
 ]
-
-# Initialize Faker object for generating random names and phone numbers
-faker = Faker('en_IN')
 
 
 def generate_response_from_gemini(input_text):
@@ -72,8 +68,8 @@ def extract_candidate_name(resume_text):
     if candidate_names:
         return candidate_names[0]
     else:
-        # If no name found, return a random Indian name
-        return faker.name()
+        # If no name found, return a generic Indian name
+        return "Candidate Name"
 
 
 # Function to extract candidate phone number from resume text
@@ -88,8 +84,8 @@ def extract_candidate_phone_number(resume_text):
     if candidate_phones:
         return candidate_phones[0]
     else:
-        # If no phone number found, return a random Indian phone number
-        return faker.phone_number()
+        # If no phone number found, return a generic Indian phone number
+        return "+91 XXXXXXXXXX"
 
 
 # Function to calculate job description match percentage
