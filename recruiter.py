@@ -128,9 +128,7 @@ with open('./style_recruiter.css') as f:
     css = f.read()
 
 st.markdown(f'<style>{css}</style>', unsafe_allow_html=True)
-if st.button('Go Back'):
-    webbrowser.open_new_tab(url)
-    
+
 st.title("Upload Resumes 🚀")
 st.markdown('<style>h1{color: black; text-align: center;}</style>', unsafe_allow_html=True)
 job_description = st.text_area("Paste the Job Description", height=300)
