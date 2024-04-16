@@ -127,7 +127,16 @@ url = 'http://localhost:5173/adminjobsportal'
 with open('./style_recruiter.css') as f:
     css = f.read()
 
+
 st.markdown(f'<style>{css}</style>', unsafe_allow_html=True)
+
+st.markdown("""
+    <a href="http://localhost:5173/adminjobsportal" class="custom_button" target = "_self"> 
+            <p>
+                Go Back
+            </p>     
+    </a>
+""", unsafe_allow_html=True)
 
 st.title("Upload Resumes 🚀")
 st.markdown('<style>h1{color: black; text-align: center;}</style>', unsafe_allow_html=True)
@@ -135,8 +144,7 @@ job_description = st.text_area("Paste the Job Description", height=300)
 uploaded_files = st.file_uploader("Upload Your Resume", type=["pdf", "docx"], accept_multiple_files=True, help="Please upload PDF or DOCX files")
 
 submit_button = st.button("Submit")
-if st.button('Go Back'):
-    webbrowser.open_new_tab(url)
+
 
 # Set the minimum passing score
 minimum_passing_score = 70
