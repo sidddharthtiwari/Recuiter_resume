@@ -136,44 +136,48 @@ uploaded_files = st.file_uploader("Upload Your Resume", type=["pdf", "docx"], ac
 
 submit_button = st.button("Submit")
 
-
 # Set the minimum passing score
 minimum_passing_score = 70
 
-
 if submit_button:
-    if uploaded_files:
-        selected_candidates = []
-        for uploaded_file in uploaded_files:
-            if uploaded_file.type == "application/pdf":
-                resume_text = extract_text_from_pdf_file(uploaded_file)
-                print("Extracted PDF Text:", resume_text)  # Debugging statement
-            elif uploaded_file.type == "application/vnd.openxmlformats-officedocument.wordprocessingml.document":
-                resume_text = extract_text_from_docx_file(uploaded_file)
-                print("Extracted DOCX Text:", resume_text)  # Debugging statement
-            
-            # Calculate job description match percentage
-            match_percentage = calculate_match_percentage(resume_text, job_description)
+    # Check if job description is provided
+    if not job_description:
+        st.error("⚠️ Please provide the job description.")
+    else:
+        if uploaded_files:
+            selected_candidates = []
+            no_candidates_meet_criteria = True
+            for uploaded_file in uploaded_files:
+                if uploaded_file.type == "application/pdf":
+                    resume_text = extract_text_from_pdf_file(uploaded_file)
+                    print("Extracted PDF Text:", resume_text)  # Debugging statement
+                elif uploaded_file.type == "application/vnd.openxmlformats-officedocument.wordprocessingml.document":
+                    resume_text = extract_text_from_docx_file(uploaded_file)
+                    print("Extracted DOCX Text:", resume_text)  # Debugging statement
+                
+                # Calculate job description match percentage
+                match_percentage = calculate_match_percentage(resume_text, job_description)
 
-            # Check if candidate meets minimum score criteria
-            if match_percentage is not None and match_percentage >= minimum_passing_score:
-                # Extract candidate name and phone number
-                candidate_name = extract_candidate_name(resume_text)
-                candidate_phone = extract_candidate_phone_number(resume_text)
+                # Check if candidate meets minimum score criteria
+                if match_percentage is not None and match_percentage >= minimum_passing_score:
+                    # Extract candidate name and phone number
+                    candidate_name = extract_candidate_name(resume_text)
+                    candidate_phone = extract_candidate_phone_number(resume_text)
 
-                # Append candidate details to the list of selected candidates
-                selected_candidates.append((candidate_name, candidate_phone))
+                    # Append candidate details to the list of selected candidates
+                    selected_candidates.append((candidate_name, candidate_phone))
+                    no_candidates_meet_criteria = False
 
-        # Display selected candidates' names and phone numbers in columns with improved style
-        if selected_candidates:
-            st.subheader("🌟 Selected Candidates 🌟")
-            for i, (name, phone) in enumerate(selected_candidates, start=1):
-                st.markdown(f"""
-                    <div style="background-color: #fff; border: 2px solid #333; padding: 10px; margin-bottom: 10px;">
-                        <p style="font-family: 'Poppins', sans-serif; font-weight: 600; font-size: 1.2rem;">Candidate {i}</p>
-                        <p style="font-family: 'Poppins', sans-serif; font-size: 1rem;">Name: {name}</p>
-                        <p style="font-family: 'Poppins', sans-serif; font-size: 1rem;">Phone: {phone}</p>
-                    </div>
-                """, unsafe_allow_html=True)
-        else:
-            st.text("No candidates meet the minimum score criteria (70% or above)")
+            # Display selected candidates' names and phone numbers in columns with improved style
+            if selected_candidates:
+                st.subheader("🌟 Selected Candidates 🌟")
+                for i, (name, phone) in enumerate(selected_candidates, start=1):
+                    st.markdown(f"""
+                        <div style="background-color: #fff; border: 2px solid #333; padding: 10px; margin-bottom: 10px;">
+                            <p style="font-family: 'Poppins', sans-serif; font-weight: 600; font-size: 1.2rem;">Candidate {i}</p>
+                            <p style="font-family: 'Poppins', sans-serif; font-size: 1rem;">Name: {name}</p>
+                            <p style="font-family: 'Poppins', sans-serif; font-size: 1rem;">Phone: {phone}</p>
+                        </div>
+                    """, unsafe_allow_html=True)
+            else:
+                st.error("🛑 No candidates meet the minimum score criteria (70% or above).")
