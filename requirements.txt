@@ -5,3 +5,4 @@ docx2txt
 langchain_google_genai
 spacy
 phonenumbers
+fitz
