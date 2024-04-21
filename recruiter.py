@@ -6,13 +6,17 @@ import PyPDF2 as pdf
 from dotenv import load_dotenv
 import re
 import webbrowser
+import spacy
+from spacy.matcher import Matcher
+from PyPDF2 import PdfFileReader
+import phonenumbers
+import fitz  # PyMuPDF
 
 # Load environment variables from a .env file
 load_dotenv()
 
 # Configure the generative AI model with the Google API key
 genai.configure(api_key=os.getenv("GOOGLE_API_KEY"))
-
 
 # Set up the model configuration for text generation
 generation_config = {
@@ -28,6 +32,13 @@ safety_settings = [
     for category in ["HARASSMENT", "HATE_SPEECH", "SEXUALLY_EXPLICIT", "DANGEROUS_CONTENT"]
 ]
 
+# Load English tokenizer, tagger, parser, NER, and word vectors for SpaCy
+nlp = spacy.load("en_core_web_sm")
+
+# Define a new matcher to find patterns of one or two proper nouns (potential names)
+matcher = Matcher(nlp.vocab)
+pattern = [{"POS": "PROPN"}, {"POS": "PROPN", "OP": "?"}]
+matcher.add("NAME", [pattern])
 
 def generate_response_from_gemini(input_text):
     # Create a GenerativeModel instance with 'gemini-pro' as the model type
@@ -41,7 +52,6 @@ def generate_response_from_gemini(input_text):
     # Return the generated text
     return output.text
 
-
 def extract_text_from_pdf_file(uploaded_file):
     # Use PdfReader to read the text content from a PDF file
     pdf_reader = pdf.PdfReader(uploaded_file)
@@ -50,81 +60,90 @@ def extract_text_from_pdf_file(uploaded_file):
         text_content += str(page.extract_text())
     return text_content
 
-
 def extract_text_from_docx_file(uploaded_file):
     # Use docx2txt to extract text from a DOCX file
     return docx2txt.process(uploaded_file)
 
-
-# Function to extract candidate name from resume text
 def extract_candidate_name(resume_text):
-    # Regular expression to find candidate names
-    name_pattern = r'\b[A-Z][a-z]*\b\s+\b[A-Z][a-z]*\b'
-    
-    # Find all occurrences of the name pattern in the resume text
-    candidate_names = re.findall(name_pattern, resume_text)
-    
-    # If names are found, return the first name as the candidate name
-    if candidate_names:
-        return candidate_names[0]
+    # Extract names from resume text using SpaCy
+    doc = nlp(resume_text)
+    names = []
+    matches = matcher(doc)
+    for match_id, start, end in matches:
+        names.append(doc[start:end].text)
+    # If no names found, return "Candidate Name"
+    return names[0] if names else "Candidate Name"
+
+def extract_candidate_phone_number(resume_text, default_country_code):
+    # Find all occurrences of phone numbers in the text
+    candidate_phones = phonenumbers.PhoneNumberMatcher(resume_text, default_country_code)
+
+    # Initialize a list to store formatted phone numbers
+    formatted_phones = []
+
+    # Iterate over the phone number matches
+    for match in candidate_phones:
+        # Get the phone number object
+        phone_number = match.number
+
+        # Format the phone number as a string
+        formatted_phone = phonenumbers.format_number(phone_number, phonenumbers.PhoneNumberFormat.INTERNATIONAL)
+
+        # Add the formatted phone number to the list
+        formatted_phones.append(formatted_phone)
+
+    # If phone numbers are found
+    if formatted_phones:
+        return formatted_phones
     else:
-        # If no name found, return a generic Indian name
-        return "Candidate Name"
+        return "Phone number not found"
 
+def extract_github_links_from_pdf(uploaded_file):
+    # Get the file path of the uploaded PDF file
+    file_path = f"/tmp/{uploaded_file.name}"
+    with open(file_path, "wb") as f:
+        f.write(uploaded_file.getbuffer())
 
-# Function to extract candidate phone number from resume text
-def extract_candidate_phone_number(resume_text):
-    # Regular expression to find phone numbers
-    phone_pattern = r'(\b\d{10,12}\b|\b\d{3}[-.\s]??\d{3}[-.\s]??\d{4}\b|\(\d{3}\)\s*\d{3}[-.\s]??\d{4}\b)'
-    
-    # Find all occurrences of the phone number pattern in the resume text
-    candidate_phones = re.findall(phone_pattern, resume_text)
-    
-    # If phone numbers are found, return the first phone number
-    if candidate_phones:
-        return candidate_phones[0]
-    else:
-        # If no phone number found, return a generic Indian phone number
-        return "+91 XXXXXXXXXX"
+    # Initialize a list to store extracted links
+    links = []
 
+    # Open the PDF file
+    pdf_document = fitz.open(file_path)
 
-# Function to calculate job description match percentage
-def calculate_match_percentage(resume_text, job_description):
-    # PROMPT TEMPLATE
-    input_prompt_template = """
-    As an experienced Applicant Tracking System (ATS) analyst,
-    with profound knowledge in technology, software engineering, data science, 
-    and big data engineering, your role involves evaluating resumes against job descriptions.
-    Recognizing the competitive job market, provide top-notch assistance for resume improvement.
-    Your goal is to analyze the resume against the given job description, 
-    assign a percentage match based on key criteria, and pinpoint missing keywords accurately.
-    resume:{text}
-    description:{job_description}
-    I want the response in one single string having the structure
-    {{"Job Description Match":"%", "Missing Keywords":""}}
-    """
-    
-    # Generate response from Gemini model
-    response_text = generate_response_from_gemini(input_prompt_template.format(text=resume_text, job_description=job_description))
+    # Iterate through each page of the PDF
+    for page_num in range(len(pdf_document)):
+        # Get the page object
+        page = pdf_document[page_num]
+        
+        # Extract links from the page
+        page_links = page.get_links()
+        
+        # Iterate through each link on the page
+        for link in page_links:
+            # Get the URL of the link
+            url = link.get("uri")
+            # Check if the URL is a GitHub link
+            if "github.com" in url:
+                links.append(url)
 
-    # Extract Job Description Match percentage from the response
-    match_percentage_str = response_text.split('"Job Description Match":"')[1].split('"')[0]
+    # Close the PDF document
+    pdf_document.close()
 
-    # Check if match percentage is "N/A"
-    if match_percentage_str == "N/A":
-        return None
+    # Delete the temporary file
+    os.remove(file_path)
 
-    # Remove percentage symbol and convert to float
-    match_percentage = float(match_percentage_str.rstrip('%'))
+    return links
 
-    return match_percentage
-
+def calculate_match_percentage(resume_text, job_description, minimum_passing_score):
+    # Implement this function to calculate the match percentage
+    # Placeholder implementation for now
+    return 0
 
 # Streamlit app
 # Initialize Streamlit app
 url = 'http://localhost:5173/adminjobsportal'
 
-with open('./style_recruiter.css') as f:
+with open('./recruiter.css') as f:
     css = f.read()
 
 st.markdown(f'<style>{css}</style>', unsafe_allow_html=True)
@@ -134,10 +153,8 @@ st.markdown('<style>h1{color: black; text-align: center;}</style>', unsafe_allow
 job_description = st.text_area("Paste the Job Description", height=300)
 uploaded_files = st.file_uploader("Upload Your Resume", type=["pdf", "docx"], accept_multiple_files=True, help="Please upload PDF or DOCX files")
 
+minimum_passing_score = st.number_input("Enter the minimum passing score (%)", min_value=0, max_value=100, value=0)
 submit_button = st.button("Submit")
-
-# Set the minimum passing score
-minimum_passing_score = 70
 
 if submit_button:
     # Check if job description is provided
@@ -154,30 +171,36 @@ if submit_button:
                 elif uploaded_file.type == "application/vnd.openxmlformats-officedocument.wordprocessingml.document":
                     resume_text = extract_text_from_docx_file(uploaded_file)
                     print("Extracted DOCX Text:", resume_text)  # Debugging statement
-                
+
+                # Extract candidate name
+                candidate_name = extract_candidate_name(resume_text)
+
+                # Extract GitHub links
+                github_links = extract_github_links_from_pdf(uploaded_file)
+
                 # Calculate job description match percentage
-                match_percentage = calculate_match_percentage(resume_text, job_description)
+                match_percentage = calculate_match_percentage(resume_text, job_description, minimum_passing_score)
 
                 # Check if candidate meets minimum score criteria
                 if match_percentage is not None and match_percentage >= minimum_passing_score:
-                    # Extract candidate name and phone number
-                    candidate_name = extract_candidate_name(resume_text)
-                    candidate_phone = extract_candidate_phone_number(resume_text)
+                    # Extract candidate phone number
+                    candidate_phone = extract_candidate_phone_number(resume_text, "ZZ")  # Assuming ZZ as the default country code
 
                     # Append candidate details to the list of selected candidates
-                    selected_candidates.append((candidate_name, candidate_phone))
+                    selected_candidates.append((candidate_name, candidate_phone, github_links))
                     no_candidates_meet_criteria = False
 
-            # Display selected candidates' names and phone numbers in columns with improved style
+            # Display selected candidates' names, phone numbers, and GitHub links in columns with improved style
             if selected_candidates:
                 st.subheader("🌟 Selected Candidates 🌟")
-                for i, (name, phone) in enumerate(selected_candidates, start=1):
+                for i, (name, phone, github_links) in enumerate(selected_candidates, start=1):
                     st.markdown(f"""
                         <div style="background-color: #fff; border: 2px solid #333; padding: 10px; margin-bottom: 10px;">
                             <p style="font-family: 'Poppins', sans-serif; font-weight: 600; font-size: 1.2rem;">Candidate {i}</p>
                             <p style="font-family: 'Poppins', sans-serif; font-size: 1rem;">Name: {name}</p>
                             <p style="font-family: 'Poppins', sans-serif; font-size: 1rem;">Phone: {phone}</p>
+                            <p style="font-family: 'Poppins', sans-serif; font-size: 1rem;">GitHub Links: {', '.join(github_links) if github_links else 'None'}</p>
                         </div>
                     """, unsafe_allow_html=True)
             else:
-                st.error("🛑 No candidates meet the minimum score criteria (70% or above).")
+                st.error(f"🛑 No candidates meet the minimum score criteria ({minimum_passing_score}% or above).")
